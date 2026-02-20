@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabase } from "@/lib/supabase";
+import crypto from "crypto";
 
 // Venture upgrade tiers: spend Capital to level up
 const UPGRADE_COSTS = [
@@ -12,9 +13,11 @@ const UPGRADE_COSTS = [
 export async function POST(req: NextRequest) {
   try {
     // Get current venture level
-    const ventureRow = db.prepare(
-      "SELECT amount FROM player_resources WHERE resource_type = 'venture_level'"
-    ).get() as { amount: number } | undefined;
+    const { data: ventureRow } = await supabase
+      .from("player_resources")
+      .select("amount")
+      .eq("resource_type", "venture_level")
+      .single();
 
     const currentLevel = ventureRow?.amount || 1;
 
@@ -25,47 +28,55 @@ export async function POST(req: NextRequest) {
     }
 
     // Check capital
-    const capitalRow = db.prepare(
-      "SELECT amount FROM player_resources WHERE resource_type = 'capital'"
-    ).get() as { amount: number } | undefined;
+    const { data: capitalRow } = await supabase
+      .from("player_resources")
+      .select("amount")
+      .eq("resource_type", "capital")
+      .single();
 
     const capital = capitalRow?.amount || 0;
 
     if (capital < nextUpgrade.cost) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         error: `Need ${nextUpgrade.cost} Capital (you have ${capital})`,
         needed: nextUpgrade.cost,
-        have: capital 
+        have: capital,
       }, { status: 400 });
     }
 
-    // Spend capital and level up
-    db.transaction(() => {
-      db.prepare(
-        "UPDATE player_resources SET amount = amount - ? WHERE resource_type = 'capital'"
-      ).run(nextUpgrade.cost);
+    // Spend capital
+    await supabase.rpc("increment_resource_amount", {
+      p_resource_type: "capital",
+      p_delta: -nextUpgrade.cost,
+    });
 
-      if (ventureRow) {
-        db.prepare(
-          "UPDATE player_resources SET amount = ? WHERE resource_type = 'venture_level'"
-        ).run(nextUpgrade.level);
-      } else {
-        db.prepare(
-          "INSERT INTO player_resources (id, player_id, resource_type, amount) VALUES (?, ?, ?, ?)"
-        ).run(crypto.randomUUID(), 'default_player', 'venture_level', nextUpgrade.level);
-      }
-    })();
+    // Level up
+    if (ventureRow) {
+      await supabase
+        .from("player_resources")
+        .update({ amount: nextUpgrade.level })
+        .eq("resource_type", "venture_level");
+    } else {
+      await supabase.from("player_resources").insert({
+        id: crypto.randomUUID(),
+        player_id: "default_player",
+        resource_type: "venture_level",
+        amount: nextUpgrade.level,
+      });
+    }
 
-    const newCapital = db.prepare(
-      "SELECT amount FROM player_resources WHERE resource_type = 'capital'"
-    ).get() as { amount: number };
+    const { data: newCapital } = await supabase
+      .from("player_resources")
+      .select("amount")
+      .eq("resource_type", "capital")
+      .single();
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       newLevel: nextUpgrade.level,
       newName: nextUpgrade.name,
       capitalSpent: nextUpgrade.cost,
-      capitalRemaining: newCapital.amount
+      capitalRemaining: newCapital?.amount || 0,
     });
 
   } catch (error) {

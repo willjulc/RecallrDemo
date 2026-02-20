@@ -1,89 +1,97 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabase } from "@/lib/supabase";
+import { seedDemoDatabase } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   try {
-    // Check for targeted concept study
+    // Ensure demo data exists
+    await seedDemoDatabase();
+
     const body = await req.json().catch(() => ({}));
     const targetConceptId = body.conceptId || null;
 
     let selectedFlashcards: Record<string, unknown>[] = [];
-    let conceptsUsed: any[] = [];
+    let conceptsUsed: Record<string, unknown>[] = [];
 
     if (targetConceptId) {
-        // Targeted study: focus on a specific concept
-        const targetConcept = db.prepare("SELECT * FROM concepts WHERE id = ?")
-            .get(targetConceptId) as any | undefined;
-        
-        if (!targetConcept) {
-             return NextResponse.json({ error: "Target concept not found" }, { status: 404 });
-        }
+      const { data: targetConcept } = await supabase
+        .from("concepts")
+        .select("*")
+        .eq("id", targetConceptId)
+        .single();
 
-        // Get ALL flashcards for the target concept (crisis review — any level is fine)
-        selectedFlashcards = db.prepare(`
-            SELECT f.*, c.name as concept_name, c.topic 
-            FROM flashcards f
-            JOIN concepts c ON f.concept_id = c.id
-            WHERE f.concept_id = ?
-            ORDER BY RANDOM()
-            LIMIT 5
-        `).all(targetConceptId) as Record<string, unknown>[];
+      if (!targetConcept) {
+        return NextResponse.json({ error: "Target concept not found" }, { status: 404 });
+      }
 
-        conceptsUsed.push(targetConcept);
+      const { data: flashcards } = await supabase
+        .from("flashcards")
+        .select("*, concepts!inner(name, topic)")
+        .eq("concept_id", targetConceptId)
+        .limit(5);
+
+      if (flashcards) {
+        selectedFlashcards = flashcards.map(f => ({
+          ...f,
+          concept_name: (f.concepts as Record<string, unknown>)?.name,
+          topic: (f.concepts as Record<string, unknown>)?.topic,
+          concepts: undefined,
+        }));
+      }
+
+      conceptsUsed.push(targetConcept);
 
     } else {
-        // General study: Prioritize concepts that are due for review, lower mastery, or haven't been reviewed much
-        // For the hackathon MVP, we'll pick a few concepts that have flashcards available
-        
-        const priorityConcepts = db.prepare(`
-             SELECT DISTINCT c.*
-             FROM concepts c
-             JOIN flashcards f ON c.id = f.concept_id
-             WHERE f.bloom_level <= c.bloom_mastery
-             ORDER BY c.mastery_score ASC, c.last_reviewed ASC
-             LIMIT 5
-        `).all() as any[];
+      const { data: priorityConcepts } = await supabase
+        .from("concepts")
+        .select("*")
+        .order("mastery_score", { ascending: true })
+        .order("last_reviewed", { ascending: true, nullsFirst: true })
+        .limit(5);
 
+      if (priorityConcepts && priorityConcepts.length > 0) {
+        const conceptIds = priorityConcepts.map(c => c.id);
         conceptsUsed = priorityConcepts;
 
-        if (priorityConcepts.length > 0) {
-            const conceptIds = priorityConcepts.map(c => c.id);
-            const placeholders = conceptIds.map(() => '?').join(',');
-            
-            // Get 1-2 cards per selected concept to interleave topics
-            selectedFlashcards = db.prepare(`
-                SELECT f.*, c.name as concept_name, c.topic 
-                FROM flashcards f
-                JOIN concepts c ON f.concept_id = c.id
-                WHERE f.concept_id IN (${placeholders}) 
-                  AND f.bloom_level <= c.bloom_mastery
-                ORDER BY RANDOM()
-                LIMIT 10
-            `).all(...conceptIds) as Record<string, unknown>[];
+        const { data: flashcards } = await supabase
+          .from("flashcards")
+          .select("*, concepts!inner(name, topic, bloom_mastery)")
+          .in("concept_id", conceptIds)
+          .limit(10);
+
+        if (flashcards) {
+          selectedFlashcards = flashcards
+            .filter(f => f.bloom_level <= ((f.concepts as Record<string, unknown>)?.bloom_mastery as number ?? 99))
+            .map(f => ({
+              ...f,
+              concept_name: (f.concepts as Record<string, unknown>)?.name,
+              topic: (f.concepts as Record<string, unknown>)?.topic,
+              concepts: undefined,
+            }));
         }
+      }
     }
 
     if (selectedFlashcards.length === 0) {
-        return NextResponse.json({ 
-            error: "We are still building your venture and generating questions in the background. Please wait a moment and try again!" 
-        }, { status: 400 });
+      return NextResponse.json({
+        error: "We are still building your venture and generating questions in the background. Please wait a moment and try again!"
+      }, { status: 400 });
     }
 
-    // Shuffle the flashcards to interleave topics and pick a max of 10
     const shuffled = selectedFlashcards.sort(() => 0.5 - Math.random()).slice(0, 10);
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       flashcards: shuffled,
       targetedConcept: targetConceptId || null,
-      conceptsUsed: conceptsUsed.map(c => ({
+      conceptsUsed: conceptsUsed.map((c: Record<string, unknown>) => ({
         name: c.name,
         topic: c.topic,
         bloom_level: c.bloom_mastery,
-        mastery: c.mastery_score
-      }))
+        mastery: c.mastery_score,
+      })),
     });
-    
+
   } catch (error: unknown) {
     console.error("Failed to fetch study deck:", error);
     return NextResponse.json({ error: "Failed to fetch study deck" }, { status: 500 });

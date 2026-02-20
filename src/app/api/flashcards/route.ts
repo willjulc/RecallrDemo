@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabase } from "@/lib/supabase";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -10,28 +10,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    let flashcards;
+    let query = supabase
+      .from("flashcards")
+      .select("*, concepts(name, topic)");
+
     if (documentId === "library") {
-      // Pull flashcards with concept data, interleaved
-      flashcards = db.prepare(`
-        SELECT f.*, c.name as concept_name, c.topic 
-        FROM flashcards f
-        LEFT JOIN concepts c ON f.concept_id = c.id
-        ORDER BY RANDOM() 
-        LIMIT 20
-      `).all() as Record<string, unknown>[];
+      query = query.limit(20);
     } else {
-      flashcards = db.prepare(`
-        SELECT f.*, c.name as concept_name, c.topic
-        FROM flashcards f
-        LEFT JOIN concepts c ON f.concept_id = c.id
-        WHERE f.document_id = ?
-      `).all(documentId) as Record<string, unknown>[];
+      query = query.eq("document_id", documentId);
     }
-    
-    const formatted = flashcards.map((fc) => ({
+
+    const { data: flashcards, error } = await query;
+
+    if (error) throw error;
+
+    const formatted = (flashcards || []).map((fc) => ({
       ...fc,
-      options: JSON.parse(fc.options as string)
+      concept_name: (fc.concepts as Record<string, unknown>)?.name,
+      topic: (fc.concepts as Record<string, unknown>)?.topic,
+      concepts: undefined,
     }));
 
     return NextResponse.json({ flashcards: formatted });

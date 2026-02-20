@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractAndChunkPdf } from "@/lib/pdfProcessing";
-import { db } from "@/lib/db";
-import { extractConceptsForDocument } from "@/lib/conceptExtractor";
+import { supabase } from "@/lib/supabase";
 import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
@@ -20,32 +19,32 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const documentId = crypto.randomUUID();
-    
-    // Store document metadata in SQLite
-    db.prepare("INSERT INTO documents (id, name) VALUES (?, ?)").run(documentId, file.name);
-    
+
+    // Store document metadata
+    await supabase
+      .from("documents")
+      .insert({ id: documentId, name: file.name });
+
     // Extract and chunk text
     const chunks = await extractAndChunkPdf(buffer);
     console.log(`Extracted ${chunks.length} chunks from ${file.name}`);
 
-    // Store raw text chunks in SQLite
-    const insertChunk = db.prepare(
-      "INSERT INTO chunks (document_id, page_number, content) VALUES (?, ?, ?)"
+    // Store raw text chunks
+    await supabase.from("chunks").insert(
+      chunks.map((chunk) => ({
+        document_id: documentId,
+        page_number: chunk.pageNumber,
+        content: chunk.content,
+      }))
     );
-    const insertAll = db.transaction((chunkList: typeof chunks) => {
-      for (const chunk of chunkList) {
-        insertChunk.run(documentId, chunk.pageNumber, chunk.content);
-      }
-    });
-    insertAll(chunks);
-    
+
     console.log(`Stored ${chunks.length} pending chunks for ${file.name}. Ready for background processing.`);
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       documentId,
       message: "Document parsed and queued for background processing",
-      chunksCount: chunks.length 
+      chunksCount: chunks.length,
     }, { status: 200 });
 
   } catch (error: unknown) {
