@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ["@lancedb/lancedb", "better-sqlite3", "pdf-parse"],
 };
 
 export default nextConfig;
