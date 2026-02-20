@@ -99,7 +99,7 @@ export function FlashcardDeck({ conceptId }: { conceptId?: string } = {}) {
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     let pollCount = 0;
-    const MAX_POLLS = 10; // 10 polls × 3s = 30s timeout
+    const MAX_POLLS = 30; // 30 polls × 3s = 90s timeout
     if (!loading && cards.length === 0) {
       interval = setInterval(async () => {
         pollCount++;
