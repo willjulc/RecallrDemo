@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 
-const dbPath = process.env.DATABASE_URL?.replace('file:', '') || './dev.db';
+const isVercel = process.env.VERCEL === '1';
+const dbPath = process.env.DATABASE_URL?.replace('file:', '') || (isVercel ? '/tmp/dev.db' : './dev.db');
 
 export const db = new Database(dbPath);
 
