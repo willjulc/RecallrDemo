@@ -139,7 +139,7 @@ ${sourceText.substring(0, 3000)}`;
 
       try {
         const response = await withRetry(() => ai.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-2.5-flash",
           contents: fullPrompt,
           config: {
             responseMimeType: "application/json",
