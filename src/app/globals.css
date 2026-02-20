@@ -138,6 +138,16 @@
   100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
 }
 
+@keyframes float-particle-1 {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.6; }
+  50% { transform: translateY(-10px) scale(1.5); opacity: 0.2; }
+}
+
+@keyframes float-particle-2 {
+  0%, 100% { transform: translateY(0) scale(1); opacity: 0.4; }
+  50% { transform: translateY(-12px) scale(1.3); opacity: 0.1; }
+}
+
 @keyframes correct-flash {
   0% { background-color: var(--color-green-100); }
   100% { background-color: transparent; }

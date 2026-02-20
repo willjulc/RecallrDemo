@@ -25,6 +25,11 @@ export default function Home() {
           Upload your course PDFs and get dynamic, AI-generated flashcards strictly anchored to your syllabus. No hallucinations, just your materials.
         </p>
 
+        <div className="flex gap-3 mb-8">
+          <a href="/study/library" className="btn-bounce btn-primary-3d px-6 py-3">📚 Study Now</a>
+          <a href="/ecosystem" className="btn-bounce btn-gold-3d px-6 py-3">🏰 My City</a>
+        </div>
+
         <div className="w-full">
           <UploadDropzone />
         </div>

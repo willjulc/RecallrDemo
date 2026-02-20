@@ -228,12 +228,20 @@ export function FlashcardDeck() {
             </div>
           </div>
 
-          <button 
-            onClick={() => window.location.href = '/'}
-            className="btn-bounce btn-primary-3d text-lg px-8 py-4"
-          >
-            Continue Learning
-          </button>
+          <div className="flex gap-3 justify-center">
+            <button 
+              onClick={() => window.location.href = '/ecosystem'}
+              className="btn-bounce btn-gold-3d text-lg px-8 py-4"
+            >
+              🏰 View My City
+            </button>
+            <button 
+              onClick={() => window.location.href = '/'}
+              className="btn-bounce btn-primary-3d text-lg px-8 py-4"
+            >
+              Continue Learning
+            </button>
+          </div>
         </div>
       </div>
     );

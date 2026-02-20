@@ -12,6 +12,9 @@ export default function StudyPage() {
           Recallr
         </span>
         <span className="chip chip-green font-bold">Study Session</span>
+        <a href="/ecosystem" className="chip chip-gold font-bold cursor-pointer hover:scale-105 transition-transform ml-auto">
+          🏰 My City
+        </a>
       </div>
       
       <FlashcardDeck />
