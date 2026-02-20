@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { supabase } from "@/lib/supabase";
+import { seedDemoDatabase } from "@/lib/db";
 
 interface ConceptRow {
   id: string;
@@ -22,7 +23,7 @@ const BUILDING_TIERS: Record<number, { name: string; emoji: string }> = {
   5: { name: "Citadel", emoji: "⛩️" },
 };
 
-// Topic → visual theme
+// Topic visual theme
 const TOPIC_THEMES: Record<string, { color: string; groundEmoji: string; accent: string }> = {
   default:    { color: "#22c55e", groundEmoji: "🌿", accent: "#16a34a" },
   accounting: { color: "#3b82f6", groundEmoji: "📊", accent: "#2563eb" },
@@ -52,20 +53,27 @@ function getDecayLevel(lastReviewed: string | null): "healthy" | "warning" | "cr
 
 export async function GET() {
   try {
-    const concepts = db.prepare("SELECT * FROM concepts ORDER BY topic, mastery_score DESC")
-      .all() as ConceptRow[];
+    // Ensure demo data exists
+    await seedDemoDatabase();
 
-    // Calculate total resources from XP
-    const xpResult = db.prepare(
-      "SELECT COALESCE(SUM(xp_earned), 0) as total_xp FROM user_interactions"
-    ).get() as { total_xp: number };
+    const { data: concepts } = await supabase
+      .from("concepts")
+      .select("*")
+      .order("topic")
+      .order("mastery_score", { ascending: false });
 
-    const totalInteractions = db.prepare(
-      "SELECT COUNT(*) as count FROM user_interactions"
-    ).get() as { count: number };
+    const typedConcepts = (concepts || []) as ConceptRow[];
+
+    // Calculate total XP
+    const { data: xpResult } = await supabase
+      .from("user_interactions")
+      .select("xp_earned");
+    const totalXP = (xpResult || []).reduce((sum, r) => sum + (r.xp_earned || 0), 0);
+
+    const totalInteractions = (xpResult || []).length;
 
     // Build the ecosystem state
-    const buildings = concepts.map((concept, index) => {
+    const buildings = typedConcepts.map((concept, index) => {
       const theme = getTopicTheme(concept.topic);
       const tier = BUILDING_TIERS[concept.bloom_mastery] || BUILDING_TIERS[0];
       const decay = getDecayLevel(concept.last_reviewed);
@@ -75,26 +83,16 @@ export async function GET() {
         name: concept.name,
         topic: concept.topic,
         description: concept.description,
-        
-        // Building state
         tier: concept.bloom_mastery,
         tierName: tier.name,
         tierEmoji: tier.emoji,
-        
-        // Health (mapped from mastery)
         health: Math.round(concept.mastery_score * 100),
         decay,
-        
-        // Visual theme
         color: theme.color,
         accent: theme.accent,
         groundEmoji: theme.groundEmoji,
-        
-        // Grid position (arrange in a roughly isometric grid)
         gridX: index % 4,
         gridY: Math.floor(index / 4),
-        
-        // Stats
         reviewCount: concept.review_count,
         bloomLevel: concept.bloom_mastery,
       };
@@ -124,26 +122,34 @@ export async function GET() {
     }
 
     // Get Capital balance
-    const capitalResource = db.prepare("SELECT amount FROM player_resources WHERE resource_type = 'capital'").get() as { amount: number } | undefined;
+    const { data: capitalResource } = await supabase
+      .from("player_resources")
+      .select("amount")
+      .eq("resource_type", "capital")
+      .single();
     const capital = capitalResource?.amount || 0;
 
     // Get Venture Level
-    const ventureLevelRow = db.prepare("SELECT amount FROM player_resources WHERE resource_type = 'venture_level'").get() as { amount: number } | undefined;
+    const { data: ventureLevelRow } = await supabase
+      .from("player_resources")
+      .select("amount")
+      .eq("resource_type", "venture_level")
+      .single();
     const ventureLevel = ventureLevelRow?.amount || 1;
 
     return NextResponse.json({
       buildings,
       stats: {
-        totalXP: xpResult.total_xp,
-        totalConcepts: concepts.length,
-        averageMastery: concepts.length > 0 
-          ? Math.round(concepts.reduce((sum, c) => sum + c.mastery_score, 0) / concepts.length * 100) 
+        totalXP,
+        totalConcepts: typedConcepts.length,
+        averageMastery: typedConcepts.length > 0
+          ? Math.round(typedConcepts.reduce((sum, c) => sum + c.mastery_score, 0) / typedConcepts.length * 100)
           : 0,
-        totalInteractions: totalInteractions.count,
-        conceptsAtRisk: concepts.filter(c => getDecayLevel(c.last_reviewed) !== "healthy").length,
-        capital: capital,
-        ventureLevel: ventureLevel,
-      }
+        totalInteractions,
+        conceptsAtRisk: typedConcepts.filter(c => getDecayLevel(c.last_reviewed) !== "healthy").length,
+        capital,
+        ventureLevel,
+      },
     });
 
   } catch (error) {
