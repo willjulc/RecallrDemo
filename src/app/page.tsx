@@ -1,37 +1,33 @@
-import { UploadDropzone } from "@/components/UploadDropzone";
-
 export default function Home() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-surface-raised">
+    <main className="min-h-screen flex flex-col items-center justify-center p-6" style={{ background: 'var(--color-surface-raised)' }}>
       <div className="w-full max-w-3xl flex flex-col items-center text-center animate-fade-in-up">
         {/* Logo */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center text-2xl" style={{ boxShadow: '0 0 0 2px #16a34a, 0 5px 0 #16a34a' }}>
-            🧠
+        <div className="ds-logo mb-8 mt-12">
+          <div className="ds-logo-mark">🚀</div>
+          <div className="text-left">
+            <div className="ds-logo-name">Recallr</div>
+            <div className="ds-logo-tagline">// founder-os · v3.0</div>
           </div>
-          <span className="font-display text-4xl font-bold text-text-primary">Recallr</span>
         </div>
 
         {/* Badge */}
-        <div className="chip chip-green mb-6 text-sm font-bold">
-          ✨ Beta — Powered by Gemini AI
+        <div className="traction-badge mb-6">
+          ▲ Founder OS Beta
         </div>
         
-        <h1 className="font-display text-5xl md:text-6xl font-bold tracking-tight mb-4 text-text-primary leading-tight">
-          Study smarter,<br />not harder.
+        <h1 className="type-display mb-4 leading-tight">
+          Study smarter.<br />
+          <span className="type-display-accent">Master faster.</span>
         </h1>
         
-        <p className="text-lg text-text-secondary mb-10 max-w-2xl leading-relaxed font-semibold">
-          Upload your course PDFs and get dynamic, AI-generated flashcards strictly anchored to your syllabus. No hallucinations, just your materials.
+        <p className="type-body text-lg mb-10 max-w-2xl leading-relaxed">
+          AI-generated active recall questions anchored strictly to your course materials. No hallucinations — just real mastery.
         </p>
 
-        <div className="flex gap-3 mb-8">
-          <a href="/study/library" className="btn-bounce btn-primary-3d px-6 py-3">📚 Study Now</a>
-          <a href="/ecosystem" className="btn-bounce btn-gold-3d px-6 py-3">🏰 My City</a>
-        </div>
-
-        <div className="w-full">
-          <UploadDropzone />
+        <div className="flex gap-4 mb-12">
+          <a href="/study/library" className="btn btn-primary btn-lg">⚡ Start Studying</a>
+          <a href="/ecosystem" className="btn btn-launch btn-lg">🚀 My Venture</a>
         </div>
       </div>
     </main>

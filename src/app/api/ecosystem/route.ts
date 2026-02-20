@@ -123,9 +123,13 @@ export async function GET() {
       });
     }
 
-    // Get coin balance
-    const resources = db.prepare("SELECT * FROM player_resources WHERE id = 1")
-      .get() as { coins: number; total_coins_earned: number; total_coins_spent: number } | undefined;
+    // Get Capital balance
+    const capitalResource = db.prepare("SELECT amount FROM player_resources WHERE resource_type = 'capital'").get() as { amount: number } | undefined;
+    const capital = capitalResource?.amount || 0;
+
+    // Get Venture Level
+    const ventureLevelRow = db.prepare("SELECT amount FROM player_resources WHERE resource_type = 'venture_level'").get() as { amount: number } | undefined;
+    const ventureLevel = ventureLevelRow?.amount || 1;
 
     return NextResponse.json({
       buildings,
@@ -137,8 +141,8 @@ export async function GET() {
           : 0,
         totalInteractions: totalInteractions.count,
         conceptsAtRisk: concepts.filter(c => getDecayLevel(c.last_reviewed) !== "healthy").length,
-        coins: resources?.coins || 0,
-        totalCoinsEarned: resources?.total_coins_earned || 0,
+        capital: capital,
+        ventureLevel: ventureLevel,
       }
     });
 

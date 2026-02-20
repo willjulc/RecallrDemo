@@ -39,15 +39,12 @@ export async function POST(req: NextRequest) {
     });
     insertAll(chunks);
     
-    console.log(`Stored ${chunks.length} chunks for ${file.name}. Extracting concepts...`);
-
-    // Extract concepts immediately after upload — builds the knowledge graph
-    await extractConceptsForDocument(documentId);
+    console.log(`Stored ${chunks.length} pending chunks for ${file.name}. Ready for background processing.`);
 
     return NextResponse.json({ 
       success: true, 
       documentId,
-      message: "Document parsed, stored, and concepts extracted",
+      message: "Document parsed and queued for background processing",
       chunksCount: chunks.length 
     }, { status: 200 });
 

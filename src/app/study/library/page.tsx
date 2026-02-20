@@ -10,22 +10,26 @@ function StudyContent() {
   const conceptName = searchParams.get("name") || undefined;
 
   return (
-    <main className="min-h-screen flex flex-col items-center py-12 px-6 bg-surface-raised">
+    <main className="min-h-screen flex flex-col items-center py-12 px-6" style={{ background: 'var(--color-surface-raised)' }}>
       {/* Header */}
-      <div className="mb-8 flex items-center gap-3">
-        <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center text-xl" style={{ boxShadow: '0 0 0 2px #16a34a, 0 4px 0 #16a34a' }}>
-          🧠
+      <div className="mb-8 flex items-center gap-4 w-full max-w-3xl justify-between">
+        <div className="flex items-center gap-4">
+          <div className="ds-logo">
+            <div className="ds-logo-mark text-2xl w-10 h-10">🚀</div>
+            <div className="text-left hidden sm:block">
+              <div className="ds-logo-name text-lg">Recallr</div>
+            </div>
+          </div>
+          
+          {conceptName ? (
+            <span className="chip chip-rose font-bold">🔧 Reviewing: {conceptName}</span>
+          ) : (
+            <span className="chip chip-lime font-bold">⚡ Active Session</span>
+          )}
         </div>
-        <span className="font-display text-2xl font-bold text-text-primary">
-          Recallr
-        </span>
-        {conceptName ? (
-          <span className="chip chip-coral font-bold">🔧 Repairing: {conceptName}</span>
-        ) : (
-          <span className="chip chip-green font-bold">Study Session</span>
-        )}
-        <a href="/ecosystem" className="chip chip-gold font-bold cursor-pointer hover:scale-105 transition-transform ml-auto">
-          🏰 My City
+        
+        <a href="/ecosystem" className="btn btn-secondary text-xs px-4 py-2 hover:scale-105 transition-transform">
+          🏢 Venture Dashboard
         </a>
       </div>
       
@@ -37,10 +41,10 @@ function StudyContent() {
 export default function StudyPage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen flex items-center justify-center bg-surface-raised">
+      <main className="min-h-screen flex items-center justify-center" style={{ background: 'var(--color-surface-raised)' }}>
         <div className="surface p-12 text-center">
-          <div className="mascot mb-4">🦉</div>
-          <h2 className="font-display text-2xl font-bold text-text-primary">Loading...</h2>
+          <div className="mascot mb-4 animate-bounce">🚀</div>
+          <h2 className="type-display text-2xl">Loading Session...</h2>
         </div>
       </main>
     }>

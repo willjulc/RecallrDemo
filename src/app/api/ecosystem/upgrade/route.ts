@@ -1,54 +1,71 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-// POST: Spend coins to boost a building
+// Venture upgrade tiers: spend Capital to level up
+const UPGRADE_COSTS = [
+  { level: 2, cost: 500,  name: "The Strip Mall Office" },
+  { level: 3, cost: 1500, name: "The Accelerator" },
+  { level: 4, cost: 3000, name: "The Corporate Campus" },
+  { level: 5, cost: 5000, name: "The Skyscraper" },
+];
+
 export async function POST(req: NextRequest) {
   try {
-    const { conceptId, cost } = await req.json();
+    // Get current venture level
+    const ventureRow = db.prepare(
+      "SELECT amount FROM player_resources WHERE resource_type = 'venture_level'"
+    ).get() as { amount: number } | undefined;
 
-    if (!conceptId || !cost) {
-      return NextResponse.json({ error: "Missing conceptId or cost" }, { status: 400 });
+    const currentLevel = ventureRow?.amount || 1;
+
+    // Find the next upgrade
+    const nextUpgrade = UPGRADE_COSTS.find(u => u.level === currentLevel + 1);
+    if (!nextUpgrade) {
+      return NextResponse.json({ error: "Already at max level!", maxed: true }, { status: 400 });
     }
 
-    // Check player has enough coins
-    const resources = db.prepare("SELECT coins FROM player_resources WHERE id = 1")
-      .get() as { coins: number } | undefined;
-    
-    if (!resources || resources.coins < cost) {
-      return NextResponse.json({ error: "Not enough coins", coins: resources?.coins || 0 }, { status: 400 });
+    // Check capital
+    const capitalRow = db.prepare(
+      "SELECT amount FROM player_resources WHERE resource_type = 'capital'"
+    ).get() as { amount: number } | undefined;
+
+    const capital = capitalRow?.amount || 0;
+
+    if (capital < nextUpgrade.cost) {
+      return NextResponse.json({ 
+        error: `Need ${nextUpgrade.cost} Capital (you have ${capital})`,
+        needed: nextUpgrade.cost,
+        have: capital 
+      }, { status: 400 });
     }
 
-    // Spend coins and boost mastery
-    const concept = db.prepare("SELECT * FROM concepts WHERE id = ?").get(conceptId) as {
-      bloom_mastery: number;
-      mastery_score: number;
-    } | undefined;
+    // Spend capital and level up
+    db.transaction(() => {
+      db.prepare(
+        "UPDATE player_resources SET amount = amount - ? WHERE resource_type = 'capital'"
+      ).run(nextUpgrade.cost);
 
-    if (!concept) {
-      return NextResponse.json({ error: "Concept not found" }, { status: 404 });
-    }
+      if (ventureRow) {
+        db.prepare(
+          "UPDATE player_resources SET amount = ? WHERE resource_type = 'venture_level'"
+        ).run(nextUpgrade.level);
+      } else {
+        db.prepare(
+          "INSERT INTO player_resources (id, player_id, resource_type, amount) VALUES (?, ?, ?, ?)"
+        ).run(crypto.randomUUID(), 'default_player', 'venture_level', nextUpgrade.level);
+      }
+    })();
 
-    // Boost mastery score by 0.15 and potentially upgrade Bloom's level
-    let newMastery = Math.min(1, concept.mastery_score + 0.15);
-    let newBloom = concept.bloom_mastery;
-    
-    if (newMastery > 0.7 && newBloom < 5) {
-      newBloom = Math.min(5, newBloom + 1);
-    }
-
-    db.prepare("UPDATE concepts SET mastery_score = ?, bloom_mastery = ? WHERE id = ?")
-      .run(newMastery, newBloom, conceptId);
-    
-    db.prepare("UPDATE player_resources SET coins = coins - ?, total_coins_spent = total_coins_spent + ? WHERE id = 1")
-      .run(cost, cost);
-
-    const updatedResources = db.prepare("SELECT * FROM player_resources WHERE id = 1").get() as { coins: number };
+    const newCapital = db.prepare(
+      "SELECT amount FROM player_resources WHERE resource_type = 'capital'"
+    ).get() as { amount: number };
 
     return NextResponse.json({ 
-      success: true, 
-      coins: updatedResources.coins,
-      newMastery: Math.round(newMastery * 100),
-      newBloom 
+      success: true,
+      newLevel: nextUpgrade.level,
+      newName: nextUpgrade.name,
+      capitalSpent: nextUpgrade.cost,
+      capitalRemaining: newCapital.amount
     });
 
   } catch (error) {

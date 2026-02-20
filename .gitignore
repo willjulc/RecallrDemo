@@ -46,3 +46,4 @@ lancedb/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+update_css.js
