@@ -754,26 +754,23 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const targetConceptId = body.conceptId || null;
 
-    let selectedFlashcards = [];
-    let conceptsUsed = [];
+    let selectedFlashcards: any[] = [];
+    let conceptsUsed: any[] = [];
 
     if (targetConceptId) {
         selectedFlashcards = FALLBACK_CARDS.filter(c => c.concept_id === targetConceptId);
         const targetConcept = FALLBACK_CONCEPTS.find(c => c.id === targetConceptId);
         if (targetConcept) conceptsUsed.push(targetConcept);
-    } else {
-        // General study: pick 5 random concepts, then get 2 cards from each
+    }
+
+    // IF the target concept wasn't found in our hardcoded list (e.g. from an old DB seeding UUID),
+    // or if no target concept was requested, fallback to a random mix of cards.
+    if (selectedFlashcards.length === 0) {
         const shuffledConcepts = [...FALLBACK_CONCEPTS].sort(() => 0.5 - Math.random()).slice(0, 5);
         conceptsUsed = shuffledConcepts;
         
         const conceptIds = shuffledConcepts.map(c => c.id);
         selectedFlashcards = FALLBACK_CARDS.filter(c => conceptIds.includes(c.concept_id));
-    }
-
-    if (selectedFlashcards.length === 0) {
-        return NextResponse.json({ 
-            error: "No cards found for this topic." 
-        }, { status: 400 });
     }
 
     // Shuffle the flashcards to interleave topics and pick a max of 10
