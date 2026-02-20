@@ -24,6 +24,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS concepts (
     id TEXT PRIMARY KEY,
+    document_id TEXT,
     name TEXT NOT NULL,
     topic TEXT NOT NULL DEFAULT 'General',
     description TEXT NOT NULL DEFAULT '',
@@ -33,7 +34,8 @@ db.exec(`
     last_reviewed DATETIME,
     review_count INTEGER NOT NULL DEFAULT 0,
     source_chunk_ids TEXT NOT NULL DEFAULT '[]',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (document_id) REFERENCES documents (id)
   );
 
   CREATE TABLE IF NOT EXISTS flashcards (

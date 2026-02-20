@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractAndChunkPdf } from "@/lib/pdfProcessing";
 import { db } from "@/lib/db";
+import { extractConceptsForDocument } from "@/lib/conceptExtractor";
 import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     const chunks = await extractAndChunkPdf(buffer);
     console.log(`Extracted ${chunks.length} chunks from ${file.name}`);
 
-    // Store raw text chunks in SQLite (fast, no API calls needed)
+    // Store raw text chunks in SQLite
     const insertChunk = db.prepare(
       "INSERT INTO chunks (document_id, page_number, content) VALUES (?, ?, ?)"
     );
@@ -38,12 +39,15 @@ export async function POST(req: NextRequest) {
     });
     insertAll(chunks);
     
-    console.log(`Stored ${chunks.length} chunks for ${file.name} in SQLite. Ready for generation.`);
+    console.log(`Stored ${chunks.length} chunks for ${file.name}. Extracting concepts...`);
+
+    // Extract concepts immediately after upload — builds the knowledge graph
+    await extractConceptsForDocument(documentId);
 
     return NextResponse.json({ 
       success: true, 
       documentId,
-      message: "Document parsed and stored successfully",
+      message: "Document parsed, stored, and concepts extracted",
       chunksCount: chunks.length 
     }, { status: 200 });
 

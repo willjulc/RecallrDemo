@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { GoogleGenAI, Type } from "@google/genai";
-import { extractConceptsFromChunks, getStudyPriorityConcepts } from "@/lib/conceptExtractor";
+import { ensureConceptsExist, getStudyPriorityConcepts } from "@/lib/conceptExtractor";
 import crypto from "crypto";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -43,8 +43,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const targetConceptId = body.conceptId || null;
 
-    // Step 1: Ensure concept graph exists (extracts on first run)
-    await extractConceptsFromChunks();
+    // Safety net: ensure all uploaded documents have had concepts extracted
+    await ensureConceptsExist();
 
     // Step 2: Clear old flashcards so we always generate fresh questions
     db.prepare("DELETE FROM flashcards").run();

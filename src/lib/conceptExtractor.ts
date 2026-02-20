@@ -12,35 +12,33 @@ interface ExtractedConcept {
 }
 
 /**
- * Extract structured concepts from document chunks using Gemini.
- * Groups chunks by document, sends batches to the LLM, and stores
- * the resulting concept graph in SQLite.
+ * Extract concepts from a specific document's chunks.
+ * Called right after PDF upload to build the concept graph incrementally.
+ * Each document gets its own extraction — concepts accumulate over time.
  */
-export async function extractConceptsFromChunks(): Promise<void> {
-  // Check if concepts already exist
-  const existing = db.prepare("SELECT COUNT(*) as count FROM concepts").get() as { count: number };
-  if (existing.count > 0) {
-    console.log(`Concept graph already exists with ${existing.count} concepts. Skipping extraction.`);
-    return;
-  }
-
-  // Pull all chunks
-  const chunks = db.prepare("SELECT id, document_id, page_number, content FROM chunks").all() as {
+export async function extractConceptsForDocument(documentId: string): Promise<void> {
+  // Get chunks for this specific document
+  const chunks = db.prepare(
+    "SELECT id, document_id, page_number, content FROM chunks WHERE document_id = ?"
+  ).all(documentId) as {
     id: number;
     document_id: string;
     page_number: number;
     content: string;
   }[];
 
-  if (chunks.length === 0) return;
+  if (chunks.length === 0) {
+    console.log(`No chunks found for document ${documentId}`);
+    return;
+  }
 
-  // Build a condensed text representation for the LLM (limit context size)
-  // Group by document for coherence
+  console.log(`Extracting concepts from ${chunks.length} chunks for document ${documentId}...`);
+
+  // Build text for LLM
   const chunkSummaries = chunks.map(c => 
     `[Chunk ${c.id}, Page ${c.page_number}]: ${c.content.substring(0, 500)}`
   ).join("\n\n");
 
-  // Limit to ~15000 chars to stay within context bounds
   const truncated = chunkSummaries.substring(0, 15000);
 
   const prompt = `You are an expert academic content analyst. Analyze the following academic text excerpts and extract the KEY CONCEPTS that a student needs to master.
@@ -55,7 +53,7 @@ RULES:
 1. Extract 8-15 concepts that represent the most important ideas
 2. Concepts should be specific enough to generate targeted questions about
 3. Topics should group related concepts together
-4. Each concept must reference at least one source chunk ID
+4. Each concept must reference at least one source chunk ID from the list provided
 5. Focus on concepts that build on each other (simple → complex)
 
 SOURCE TEXT:
@@ -90,26 +88,27 @@ ${truncated}`;
     }
 
     const concepts: ExtractedConcept[] = JSON.parse(text);
-    console.log(`Extracted ${concepts.length} concepts from document chunks`);
+    console.log(`Extracted ${concepts.length} concepts from document ${documentId}`);
 
-    // Store concepts in SQLite
+    // Store concepts in SQLite, linked to this document
     const stmt = db.prepare(
-      "INSERT INTO concepts (id, name, topic, description, source_chunk_ids) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO concepts (id, document_id, name, topic, description, source_chunk_ids) VALUES (?, ?, ?, ?, ?, ?)"
     );
 
     const insertAll = db.transaction((conceptList: ExtractedConcept[]) => {
       for (const concept of conceptList) {
-        // Validate chunk IDs exist
+        // Validate chunk IDs exist for this document
         const validChunkIds = concept.source_chunk_ids.filter(id => 
           chunks.some(c => c.id === id)
         );
-        // If LLM hallucinated chunk IDs, assign random real ones
+        // If LLM hallucinated chunk IDs, assign real ones from this document
         const finalChunkIds = validChunkIds.length > 0 
           ? validChunkIds 
           : [chunks[Math.floor(Math.random() * chunks.length)].id];
 
         stmt.run(
           crypto.randomUUID(),
+          documentId,
           concept.name,
           concept.topic,
           concept.description,
@@ -119,11 +118,38 @@ ${truncated}`;
     });
 
     insertAll(concepts);
-    console.log(`Stored ${concepts.length} concepts in concept graph`);
+    console.log(`✅ Stored ${concepts.length} concepts for document ${documentId}`);
 
   } catch (error) {
     console.error("Concept extraction failed:", error);
-    throw error;
+    // Don't throw — let the upload succeed even if extraction fails
+    // Concepts can be re-extracted on next generate call
+  }
+}
+
+/**
+ * Ensure all documents have had concepts extracted.
+ * Runs during generate as a safety net — extracts for any documents
+ * that were uploaded but don't yet have concepts (e.g. if extraction
+ * failed during upload).
+ */
+export async function ensureConceptsExist(): Promise<void> {
+  // Find documents that have chunks but no concepts
+  const documentsWithoutConcepts = db.prepare(`
+    SELECT DISTINCT d.id FROM documents d
+    INNER JOIN chunks c ON c.document_id = d.id
+    LEFT JOIN concepts co ON co.document_id = d.id
+    WHERE co.id IS NULL
+  `).all() as { id: string }[];
+
+  if (documentsWithoutConcepts.length === 0) {
+    return; // All documents have concepts
+  }
+
+  console.log(`Found ${documentsWithoutConcepts.length} documents without concepts, extracting...`);
+  
+  for (const doc of documentsWithoutConcepts) {
+    await extractConceptsForDocument(doc.id);
   }
 }
 
@@ -141,11 +167,6 @@ export function getStudyPriorityConcepts(limit: number = 5): {
   mastery_score: number;
   source_chunk_ids: string;
 }[] {
-  // Select concepts prioritizing:
-  // 1. Never-reviewed concepts first
-  // 2. Lowest mastery_score
-  // 3. Longest since last review (spaced repetition)
-  // 4. Interleave by selecting from different topics
   const concepts = db.prepare(`
     SELECT * FROM concepts
     ORDER BY 
@@ -167,7 +188,6 @@ export function getStudyPriorityConcepts(limit: number = 5): {
   const selected: typeof concepts = [];
   const usedTopics = new Set<string>();
   
-  // First pass: one from each topic
   for (const concept of concepts) {
     if (selected.length >= limit) break;
     if (!usedTopics.has(concept.topic)) {
@@ -176,7 +196,6 @@ export function getStudyPriorityConcepts(limit: number = 5): {
     }
   }
   
-  // Second pass: fill remaining slots
   for (const concept of concepts) {
     if (selected.length >= limit) break;
     if (!selected.includes(concept)) {
@@ -189,7 +208,6 @@ export function getStudyPriorityConcepts(limit: number = 5): {
 
 /**
  * Update a concept's mastery after the student answers a question.
- * Implements Bloom's level escalation/de-escalation.
  */
 export function updateConceptMastery(
   conceptId: string, 
@@ -207,28 +225,23 @@ export function updateConceptMastery(
 
   let newStreak = isCorrect ? concept.correct_streak + 1 : 0;
   
-  // Mastery score: exponential moving average
   const masteryDelta = isCorrect ? 0.2 : -0.15;
   let newMastery = Math.max(0, Math.min(1, concept.mastery_score + masteryDelta));
 
-  // Bloom's level escalation logic
   let newBloom = concept.bloom_mastery;
   
   if (isCorrect && newStreak >= 2 && newBloom < 5) {
-    // Promote after 2 consecutive correct answers at current level
     newBloom = Math.min(5, newBloom + 1);
-    newStreak = 0; // Reset streak for new level
+    newStreak = 0;
     console.log(`⬆️ Concept promoted to Bloom's level ${newBloom}`);
   } else if (!isCorrect && newBloom > 1) {
-    // Demote on incorrect answer (but floor at 1)
     newBloom = Math.max(1, newBloom - 1);
     console.log(`⬇️ Concept demoted to Bloom's level ${newBloom}`);
   }
 
-  // Confidence calibration bonus to mastery
   const confidenceNorm = confidenceBefore / 100;
   const calibrationError = Math.abs(confidenceNorm - (isCorrect ? 1 : 0));
-  const calibrationBonus = (1 - calibrationError) * 0.05; // Small bonus for accurate self-assessment
+  const calibrationBonus = (1 - calibrationError) * 0.05;
   newMastery = Math.min(1, newMastery + calibrationBonus);
 
   db.prepare(`
