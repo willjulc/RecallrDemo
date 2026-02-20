@@ -12,13 +12,23 @@ export async function GET(req: NextRequest) {
   try {
     let flashcards;
     if (documentId === "library") {
-      // Pull all flashcards for global study randomly
-      flashcards = db.prepare("SELECT * FROM flashcards ORDER BY RANDOM() LIMIT 20").all() as Record<string, unknown>[];
+      // Pull flashcards with concept data, interleaved
+      flashcards = db.prepare(`
+        SELECT f.*, c.name as concept_name, c.topic 
+        FROM flashcards f
+        LEFT JOIN concepts c ON f.concept_id = c.id
+        ORDER BY RANDOM() 
+        LIMIT 20
+      `).all() as Record<string, unknown>[];
     } else {
-      flashcards = db.prepare("SELECT * FROM flashcards WHERE document_id = ?").all(documentId) as Record<string, unknown>[];
+      flashcards = db.prepare(`
+        SELECT f.*, c.name as concept_name, c.topic
+        FROM flashcards f
+        LEFT JOIN concepts c ON f.concept_id = c.id
+        WHERE f.document_id = ?
+      `).all(documentId) as Record<string, unknown>[];
     }
     
-    // Parse options array natively for frontend convenience
     const formatted = flashcards.map((fc) => ({
       ...fc,
       options: JSON.parse(fc.options as string)
