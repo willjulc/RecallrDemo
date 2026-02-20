@@ -11,7 +11,7 @@ export async function generateFlashcardsForChunks(chunks: DocumentChunk[], docum
   try {
     for (const chunk of chunks) {
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-2.0-flash",
         contents: promptConstraint + "\n\nSOURCE TEXT (Page " + chunk.pageNumber + "):\n" + chunk.content,
         config: {
           responseMimeType: "application/json",

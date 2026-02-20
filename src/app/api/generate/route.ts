@@ -7,7 +7,7 @@ import crypto from "crypto";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 /** Retry wrapper for Gemini API calls with exponential backoff for 429s */
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelay = 10000): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelay = 3000): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
