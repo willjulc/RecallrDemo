@@ -61,9 +61,19 @@ db.exec(`
     bloom_level INTEGER DEFAULT 1,
     time_taken_ms INTEGER DEFAULT 0,
     xp_earned INTEGER DEFAULT 0,
+    coins_earned INTEGER DEFAULT 0,
     calibration_accuracy REAL DEFAULT 0.0,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (flashcard_id) REFERENCES flashcards (id),
     FOREIGN KEY (concept_id) REFERENCES concepts (id)
   );
+
+  CREATE TABLE IF NOT EXISTS player_resources (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    coins INTEGER NOT NULL DEFAULT 0,
+    total_coins_earned INTEGER NOT NULL DEFAULT 0,
+    total_coins_spent INTEGER NOT NULL DEFAULT 0
+  );
+
+  INSERT OR IGNORE INTO player_resources (id, coins) VALUES (1, 0);
 `);

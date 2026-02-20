@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { GoogleGenAI, Type } from "@google/genai";
 import { extractConceptsFromChunks, getStudyPriorityConcepts } from "@/lib/conceptExtractor";
@@ -37,16 +37,43 @@ Format: "Evaluate the argument that X is better than Y", "What are the strengths
 CRITICAL: Only use the provided source text. Never introduce outside knowledge.`
 };
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
+    // Check for targeted concept study
+    const body = await req.json().catch(() => ({}));
+    const targetConceptId = body.conceptId || null;
+
     // Step 1: Ensure concept graph exists (extracts on first run)
     await extractConceptsFromChunks();
 
-    // Step 2: Get priority concepts (interleaved, spaced repetition-aware)
-    const concepts = getStudyPriorityConcepts(5);
+    // Step 2: Clear old flashcards so we always generate fresh questions
+    db.prepare("DELETE FROM flashcards").run();
 
-    if (concepts.length === 0) {
-      // Fallback: if no concepts extracted, use random chunks
+    let concepts: {
+      id: string; name: string; topic: string; description: string;
+      bloom_mastery: number; mastery_score: number; source_chunk_ids: string;
+    }[];
+
+    if (targetConceptId) {
+      // Targeted study: focus on a specific concept
+      const targetConcept = db.prepare("SELECT * FROM concepts WHERE id = ?")
+        .get(targetConceptId) as typeof concepts[0] | undefined;
+      
+      if (targetConcept) {
+        // Get the target concept + a few related ones from the same topic
+        const relatedConcepts = db.prepare(
+          "SELECT * FROM concepts WHERE topic = ? AND id != ? ORDER BY mastery_score ASC LIMIT 2"
+        ).all(targetConcept.topic, targetConceptId) as typeof concepts;
+        concepts = [targetConcept, ...(relatedConcepts || [])];
+      } else {
+        concepts = getStudyPriorityConcepts(5);
+      }
+    } else {
+      // Normal study: priority-based selection
+      concepts = getStudyPriorityConcepts(5);
+    }
+
+    if (!concepts || concepts.length === 0) {
       const chunks = db.prepare("SELECT * FROM chunks ORDER BY RANDOM() LIMIT 5")
         .all() as { id: number; document_id: string; page_number: number; content: string }[];
       
@@ -55,7 +82,7 @@ export async function POST() {
       }
     }
 
-    console.log(`Generating Bloom's-leveled questions for ${concepts.length} concepts:`);
+    console.log(`Generating fresh Bloom's-leveled questions for ${concepts.length} concepts:`);
     concepts.forEach(c => console.log(`  - "${c.name}" (${c.topic}) @ Bloom's L${c.bloom_mastery}, mastery: ${(c.mastery_score * 100).toFixed(0)}%`));
 
     const generatedFlashcards: Record<string, unknown>[] = [];
@@ -88,6 +115,7 @@ TOPIC: ${concept.topic}
 Generate 2-3 multiple-choice questions about this concept at the specified Bloom's level.
 Each question must have exactly 3 options with one correct answer.
 Include a clear explanation for why the correct answer is right.
+IMPORTANT: Generate DIFFERENT questions each time. Avoid repeating previous questions. Be creative with angles and scenarios.
 
 SOURCE TEXT:
 ${sourceText.substring(0, 3000)}`;
@@ -139,7 +167,7 @@ ${sourceText.substring(0, 3000)}`;
               card.correct_answer,
               card.explanation,
               bloomLevel,
-              bloomLevel // difficulty maps to Bloom's level
+              bloomLevel
             );
             generatedFlashcards.push({
               id,
@@ -172,6 +200,7 @@ ${sourceText.substring(0, 3000)}`;
     return NextResponse.json({ 
       success: true, 
       flashcards: shuffled,
+      targetedConcept: targetConceptId || null,
       conceptsUsed: concepts.map(c => ({
         name: c.name,
         topic: c.topic,

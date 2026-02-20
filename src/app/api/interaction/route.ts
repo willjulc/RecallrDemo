@@ -12,6 +12,7 @@ import { updateConceptMastery } from "@/lib/conceptExtractor";
  */
 function calculateXP(isCorrect: boolean, confidence: number, bloomLevel: number): {
   xp: number;
+  coins: number;
   calibrationAccuracy: number;
   feedbackType: "mastery" | "calibrated" | "overconfident" | "underconfident";
 } {
@@ -27,28 +28,26 @@ function calculateXP(isCorrect: boolean, confidence: number, bloomLevel: number)
   let feedbackType: "mastery" | "calibrated" | "overconfident" | "underconfident";
 
   if (isCorrect && confidence >= 60) {
-    // Confident + Correct → max reward
     xp = Math.round(15 * bloomMultiplier);
     feedbackType = "mastery";
   } else if (!isCorrect && confidence <= 40) {
-    // Not confident + Wrong → calibration bonus (good self-awareness)
     xp = Math.round(8 * bloomMultiplier);
     feedbackType = "calibrated";
   } else if (!isCorrect && confidence >= 60) {
-    // Overconfident + Wrong → minimal reward
     xp = Math.round(2 * bloomMultiplier);
     feedbackType = "overconfident";
   } else if (isCorrect && confidence <= 40) {
-    // Underconfident + Correct → moderate reward
     xp = Math.round(10 * bloomMultiplier);
     feedbackType = "underconfident";
   } else {
-    // Middle ground
     xp = Math.round((isCorrect ? 12 : 5) * bloomMultiplier);
     feedbackType = isCorrect ? "mastery" : "calibrated";
   }
 
-  return { xp, calibrationAccuracy, feedbackType };
+  // Knowledge Coins earned (resource allocation currency)
+  const coins = Math.ceil(xp / 3);
+
+  return { xp, coins, calibrationAccuracy, feedbackType };
 }
 
 export async function POST(req: NextRequest) {
@@ -69,13 +68,13 @@ export async function POST(req: NextRequest) {
     const conceptId = flashcard?.concept_id || null;
 
     // Calculate metacognitive XP
-    const { xp, calibrationAccuracy, feedbackType } = calculateXP(isCorrect, confidenceBefore, bloomLevel);
+    const { xp, coins, calibrationAccuracy, feedbackType } = calculateXP(isCorrect, confidenceBefore, bloomLevel);
 
     // Log the interaction with full cognitive metadata
     db.prepare(`
       INSERT INTO user_interactions 
-        (flashcard_id, concept_id, is_correct, confidence_before, bloom_level, time_taken_ms, xp_earned, calibration_accuracy) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (flashcard_id, concept_id, is_correct, confidence_before, bloom_level, time_taken_ms, xp_earned, coins_earned, calibration_accuracy) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       flashcardId,
       conceptId,
@@ -84,8 +83,17 @@ export async function POST(req: NextRequest) {
       bloomLevel,
       timeTakenMs,
       xp,
+      coins,
       calibrationAccuracy
     );
+
+    // Update player resources
+    db.prepare(`
+      UPDATE player_resources SET 
+        coins = coins + ?,
+        total_coins_earned = total_coins_earned + ?
+      WHERE id = 1
+    `).run(coins, coins);
 
     // Update concept mastery (Bloom's escalation/de-escalation)
     let masteryUpdate = null;
@@ -96,6 +104,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ 
       success: true,
       xp,
+      coins,
       calibrationAccuracy: Math.round(calibrationAccuracy * 100),
       feedbackType,
       bloomLevel,

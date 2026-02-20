@@ -123,6 +123,10 @@ export async function GET() {
       });
     }
 
+    // Get coin balance
+    const resources = db.prepare("SELECT * FROM player_resources WHERE id = 1")
+      .get() as { coins: number; total_coins_earned: number; total_coins_spent: number } | undefined;
+
     return NextResponse.json({
       buildings,
       stats: {
@@ -133,6 +137,8 @@ export async function GET() {
           : 0,
         totalInteractions: totalInteractions.count,
         conceptsAtRisk: concepts.filter(c => getDecayLevel(c.last_reviewed) !== "healthy").length,
+        coins: resources?.coins || 0,
+        totalCoinsEarned: resources?.total_coins_earned || 0,
       }
     });
 

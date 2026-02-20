@@ -45,7 +45,7 @@ const FEEDBACK_MESSAGES: Record<string, { title: string; subtitle: string; emoji
   underconfident: { title: "You Know More Than You Think!", subtitle: "Trust yourself — you had this.", emoji: "🌟" },
 };
 
-export function FlashcardDeck() {
+export function FlashcardDeck({ conceptId }: { conceptId?: string } = {}) {
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -60,37 +60,35 @@ export function FlashcardDeck() {
   
   // Scoring
   const [xp, setXp] = useState(0);
+  const [coins, setCoins] = useState(0);
   const [insightScore, setInsightScore] = useState<number[]>([]); // Array of calibration scores
   const [feedbackType, setFeedbackType] = useState<string>("mastery");
   const [lastXpGain, setLastXpGain] = useState(0);
+  const [lastCoins, setLastCoins] = useState(0);
   const [isCorrect, setIsCorrect] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
 
   useEffect(() => {
     const generateDeck = async () => {
       try {
-        const existingRes = await fetch(`/api/flashcards?documentId=library`);
-        const existingData = await existingRes.json();
-        
-        if (existingData.flashcards && existingData.flashcards.length > 0) {
-          setCards(existingData.flashcards);
-          setLoading(false);
-          return;
-        }
-
-        const res = await fetch(`/api/generate`, { method: "POST" });
+        // Always generate fresh, mastery-aware questions
+        const res = await fetch(`/api/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conceptId: conceptId || null }),
+        });
         const data = await res.json();
         if (data.flashcards && data.flashcards.length > 0) {
           setCards(data.flashcards);
         }
       } catch (e) {
-        console.error("Error fetching/generating deck", e);
+        console.error("Error generating deck", e);
       } finally {
         setLoading(false);
       }
     };
     generateDeck();
-  }, []);
+  }, [conceptId]);
 
   // When a new card appears, set state to confidence step
   useEffect(() => {
@@ -136,6 +134,10 @@ export function FlashcardDeck() {
         setLastXpGain(data.xp);
         setXp(prev => prev + data.xp);
       }
+      if (data.coins) {
+        setLastCoins(data.coins);
+        setCoins(prev => prev + data.coins);
+      }
       if (data.feedbackType) {
         setFeedbackType(data.feedbackType);
       }
@@ -154,6 +156,7 @@ export function FlashcardDeck() {
     setIsExplaining(false);
     setFeedbackType("mastery");
     setLastXpGain(0);
+    setLastCoins(0);
     setIsCorrect(false);
     setCurrentIndex(prev => prev + 1);
   }, []);
@@ -213,7 +216,7 @@ export function FlashcardDeck() {
             Your concept mastery has been updated. Questions will adapt next session.
           </p>
           
-          <div className="grid grid-cols-3 gap-3 mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
             <div className="stat-card">
               <div className="font-display text-3xl font-bold text-green-600">{accuracy}%</div>
               <div className="text-xs font-bold text-text-muted tracking-wider uppercase mt-1">Accuracy</div>
@@ -223,8 +226,12 @@ export function FlashcardDeck() {
               <div className="text-xs font-bold text-text-muted tracking-wider uppercase mt-1">XP Earned</div>
             </div>
             <div className="stat-card">
+              <div className="font-display text-3xl font-bold text-amber-500">🪙 {coins}</div>
+              <div className="text-xs font-bold text-text-muted tracking-wider uppercase mt-1">Coins</div>
+            </div>
+            <div className="stat-card">
               <div className="font-display text-3xl font-bold text-blue-500">{avgInsight}%</div>
-              <div className="text-xs font-bold text-text-muted tracking-wider uppercase mt-1">Insight Score</div>
+              <div className="text-xs font-bold text-text-muted tracking-wider uppercase mt-1">Insight</div>
             </div>
           </div>
 

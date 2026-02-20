@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface Building {
   id: string;
@@ -26,17 +26,25 @@ interface EcosystemStats {
   averageMastery: number;
   totalInteractions: number;
   conceptsAtRisk: number;
+  coins: number;
+  totalCoinsEarned: number;
 }
 
 const BLOOM_LABELS = ["—", "Remember", "Understand", "Apply", "Analyze", "Evaluate"];
+
+// Upgrade cost scales with Bloom's level
+function getUpgradeCost(bloomLevel: number): number {
+  return [0, 5, 10, 20, 35, 50][bloomLevel] || 50;
+}
 
 export function EcosystemView() {
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [stats, setStats] = useState<EcosystemStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
 
-  useEffect(() => {
+  const fetchEcosystem = useCallback(() => {
     fetch("/api/ecosystem")
       .then(res => res.json())
       .then(data => {
@@ -46,6 +54,31 @@ export function EcosystemView() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { fetchEcosystem(); }, [fetchEcosystem]);
+
+  const handleUpgrade = useCallback(async (conceptId: string, cost: number) => {
+    setUpgrading(true);
+    try {
+      const res = await fetch("/api/ecosystem/upgrade", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conceptId, cost }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Refresh ecosystem data
+        fetchEcosystem();
+        setSelected(null);
+      } else {
+        alert(data.error || "Upgrade failed");
+      }
+    } catch {
+      alert("Upgrade failed");
+    } finally {
+      setUpgrading(false);
+    }
+  }, [fetchEcosystem]);
 
   if (loading) {
     return (
@@ -76,23 +109,24 @@ export function EcosystemView() {
   }
 
   const selectedBuilding = selected ? buildings.find(b => b.id === selected) : null;
+  const coins = stats.coins;
 
   return (
     <div className="w-full max-w-4xl mx-auto">
       {/* ── STATS BAR ── */}
       <div className="flex flex-wrap gap-3 justify-center mb-8">
         <div className="stat-card px-5 py-3 flex items-center gap-2">
+          <span className="text-xl">🪙</span>
+          <div>
+            <div className="font-display text-xl font-bold text-amber-500">{coins}</div>
+            <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Coins</div>
+          </div>
+        </div>
+        <div className="stat-card px-5 py-3 flex items-center gap-2">
           <span className="text-xl">🏘️</span>
           <div>
             <div className="font-display text-xl font-bold text-text-primary">{stats.totalConcepts}</div>
             <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Buildings</div>
-          </div>
-        </div>
-        <div className="stat-card px-5 py-3 flex items-center gap-2">
-          <span className="text-xl">⭐</span>
-          <div>
-            <div className="font-display text-xl font-bold text-gold-500">{stats.totalXP}</div>
-            <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">XP</div>
           </div>
         </div>
         <div className="stat-card px-5 py-3 flex items-center gap-2">
@@ -128,14 +162,8 @@ export function EcosystemView() {
               className={`
                 relative rounded-2xl p-4 text-center transition-all duration-200
                 border-2 focus:outline-none cursor-pointer
-                ${isActive
-                  ? 'scale-[1.03] ring-2 ring-offset-2'
-                  : 'hover:scale-[1.02]'
-                }
-                ${isCritical
-                  ? 'animate-pulse'
-                  : ''
-                }
+                ${isActive ? 'scale-[1.03] ring-2 ring-offset-2' : 'hover:scale-[1.02]'}
+                ${isCritical ? 'animate-pulse' : ''}
               `}
               style={{
                 background: isEmpty
@@ -143,13 +171,10 @@ export function EcosystemView() {
                   : `linear-gradient(145deg, ${b.color}08, ${b.color}15)`,
                 borderColor: isActive
                   ? b.color
-                  : isEmpty
-                    ? '#e2e8f0'
-                    : isCritical
-                      ? '#ff4b35'
-                      : isWarning
-                        ? '#fbbf24'
-                        : `${b.color}40`,
+                  : isEmpty ? '#e2e8f0'
+                  : isCritical ? '#ff4b35'
+                  : isWarning ? '#fbbf24'
+                  : `${b.color}40`,
                 boxShadow: isActive
                   ? `0 0 0 2px ${b.color}, 0 6px 0 ${b.color}40`
                   : isCritical
@@ -228,10 +253,8 @@ export function EcosystemView() {
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={() => setSelected(null)}
         >
-          {/* Backdrop */}
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
           
-          {/* Modal */}
           <div
             className="surface relative z-10 w-full max-w-md animate-bounce-in"
             style={{ borderColor: selectedBuilding.color + "60" }}
@@ -311,15 +334,41 @@ export function EcosystemView() {
                     {selectedBuilding.decay === "critical" ? "This building is crumbling!" : "Needs maintenance"}
                   </div>
                   <div className="text-xs font-semibold text-text-muted">
-                    Review &quot;{selectedBuilding.name}&quot; to restore it.
+                    Study or spend coins to restore it.
                   </div>
                 </div>
               </div>
             )}
 
-            <a href="/study/library" className="btn-bounce btn-primary-3d w-full py-3 text-center inline-flex justify-center">
-              {selectedBuilding.decay !== "healthy" ? "🔧 Repair This Building" : "📚 Study to Upgrade"}
-            </a>
+            {/* ── ACTION BUTTONS ── */}
+            <div className="flex gap-3">
+              {/* Targeted study (repair) */}
+              <a
+                href={`/study/library?concept=${selectedBuilding.id}&name=${encodeURIComponent(selectedBuilding.name)}`}
+                className="btn-bounce btn-primary-3d flex-1 py-3 text-center inline-flex justify-center text-sm"
+              >
+                📚 {selectedBuilding.decay !== "healthy" ? "Repair (Study)" : "Study This"}
+              </a>
+
+              {/* Spend coins to boost */}
+              {(() => {
+                const cost = getUpgradeCost(selectedBuilding.bloomLevel);
+                const canAfford = coins >= cost;
+                return (
+                  <button
+                    onClick={() => handleUpgrade(selectedBuilding.id, cost)}
+                    disabled={!canAfford || upgrading || selectedBuilding.bloomLevel >= 5}
+                    className={`btn-bounce flex-1 py-3 text-sm text-center ${
+                      canAfford && selectedBuilding.bloomLevel < 5
+                        ? 'btn-gold-3d'
+                        : 'bg-gray-100 text-gray-400 border-2 border-gray-200 rounded-xl cursor-not-allowed'
+                    }`}
+                  >
+                    {upgrading ? '⏳' : '🪙'} Upgrade ({cost})
+                  </button>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}
