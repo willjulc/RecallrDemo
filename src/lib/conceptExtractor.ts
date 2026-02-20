@@ -4,6 +4,23 @@ import crypto from "crypto";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+/** Retry wrapper for Gemini API calls with exponential backoff for 429s */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelay = 10000): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      const isRateLimit = error instanceof Error && 
+        (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED'));
+      if (!isRateLimit || attempt === maxRetries) throw error;
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.log(`⏳ Rate limited. Retrying in ${delay / 1000}s... (attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
 interface ExtractedConcept {
   name: string;
   topic: string;
@@ -60,8 +77,8 @@ SOURCE TEXT:
 ${truncated}`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+    const response = await withRetry(() => ai.models.generateContent({
+      model: "gemini-2.0-flash",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -79,7 +96,7 @@ ${truncated}`;
           }
         }
       }
-    });
+    }));
 
     const text = response.text;
     if (!text) {
