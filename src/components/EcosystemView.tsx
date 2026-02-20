@@ -222,12 +222,20 @@ export function EcosystemView() {
         })}
       </div>
 
-      {/* ── SELECTED BUILDING DETAIL ── */}
+      {/* ── BUILDING DETAIL MODAL ── */}
       {selectedBuilding && !selectedBuilding.id.startsWith("empty") && (
-        <div className="mt-6 animate-slide-in">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={() => setSelected(null)}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+          
+          {/* Modal */}
           <div
-            className="surface"
+            className="surface relative z-10 w-full max-w-md animate-bounce-in"
             style={{ borderColor: selectedBuilding.color + "60" }}
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
@@ -250,7 +258,7 @@ export function EcosystemView() {
                   </div>
                 </div>
               </div>
-              <button onClick={() => setSelected(null)} className="text-text-muted hover:text-text-primary font-bold p-1">✕</button>
+              <button onClick={() => setSelected(null)} className="text-text-muted hover:text-text-primary font-bold p-1 text-lg">✕</button>
             </div>
 
             <p className="text-sm text-text-secondary font-semibold mb-4">{selectedBuilding.description}</p>
