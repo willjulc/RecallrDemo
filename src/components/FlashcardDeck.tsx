@@ -72,22 +72,30 @@ export function FlashcardDeck({ conceptId }: { conceptId?: string } = {}) {
   const [lastCoins, setLastCoins] = useState(0);
   const [isCorrect, setIsCorrect] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const generateDeck = async () => {
       try {
+        setErrorMsg(null);
         // Always generate fresh, mastery-aware questions
         const res = await fetch(`/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ conceptId: conceptId || null }),
         });
-        const data = await res.json();
-        if (data.flashcards && data.flashcards.length > 0) {
+        const data = await res.json().catch(() => null);
+        
+        if (!res.ok) {
+          throw new Error(data?.error || `Server returned ${res.status}`);
+        }
+        
+        if (data && data.flashcards && data.flashcards.length > 0) {
           setCards(data.flashcards);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Error generating deck", e);
+        setErrorMsg(e.message || "Failed to load flashcards.");
       } finally {
         setLoading(false);
       }
@@ -100,7 +108,7 @@ export function FlashcardDeck({ conceptId }: { conceptId?: string } = {}) {
     let interval: ReturnType<typeof setInterval>;
     let pollCount = 0;
     const MAX_POLLS = 10; // 10 polls × 3s = 30s timeout
-    if (!loading && cards.length === 0) {
+    if (!loading && cards.length === 0 && !errorMsg) {
       interval = setInterval(async () => {
         pollCount++;
         if (pollCount > MAX_POLLS) {
@@ -108,13 +116,8 @@ export function FlashcardDeck({ conceptId }: { conceptId?: string } = {}) {
           return;
         }
         try {
-          // Poke the background queue to process chunks into questions
-          await fetch("/api/process-queue", { 
-             method: "POST",
-             headers: { "Content-Type": "application/json" },
-             body: JSON.stringify({ targetConceptId: conceptId || null }),
-          });
-          
+          // We skip poking the background queue here for the demo
+          // to avoid Vercel timeouts. The pre-seeded cards should be ready.
           // Check if cards are now available
           const res = await fetch(`/api/generate`, {
             method: "POST",
@@ -288,6 +291,23 @@ export function FlashcardDeck({ conceptId }: { conceptId?: string } = {}) {
               Continue Learning
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+  if (errorMsg) {
+    return (
+      <div className="w-full max-w-2xl mx-auto mt-12 animate-fade-in-up">
+        <div className="surface border-[var(--rose-500)] p-12 text-center">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h2 className="type-display text-2xl mb-4 text-[var(--rose-400)]">Error Loading Questions</h2>
+          <p className="type-body text-[var(--text-secondary)] mb-6">{errorMsg}</p>
+          <button 
+            onClick={() => window.location.href = '/ecosystem'}
+            className="btn btn-secondary"
+          >
+            Return to Dashboard
+          </button>
         </div>
       </div>
     );
