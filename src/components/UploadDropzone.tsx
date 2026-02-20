@@ -192,6 +192,9 @@ export function UploadDropzone() {
                   style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
                 />
               </div>
+              <p className="text-xs font-semibold text-text-muted text-center mt-2">
+                📊 Parsing PDF & extracting knowledge graph...
+              </p>
             </div>
           )}
 
